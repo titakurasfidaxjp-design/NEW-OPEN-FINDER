@@ -1,16 +1,144 @@
-// OPEN LEAD FINDER v3.2 — opening-news candidate discovery.
-// Scores headline-level signals only. An article is never proof of a real opening.
-const MAX_SCANS=4, MAX_RESULTS=400;
-const HEADLINE=/(新規|新店|新店舗|オープン|OPEN|開業|開店|開校|開院|出店|開設|プレオープン|グランドオープン)/i;
-const OPEN_EVENT=/(新(?:規|たに)?(?:店舗|出店|開業|開店|開院|開校)|ニューオープン|グランドオープン|プレオープン|オープン予定|開業予定|開店予定|開院予定|新店舗オープン|店をオープン|店がオープン|店が開店|店を開店|新店オープン|新規オープン|OPEN(?:予定|ING)?)/i;
-const OPEN_GENERIC=/(オープン|OPEN|開店|開業|開院|開校|出店|新店舗|新店)/i;
-const STORE_SIGNAL=/(?:店|店舗|スタジオ|サロン|教室|スクール|院|ジム|ショップ|営業所|事業所|施設|校|センター)(?:が|を|に|で|の|へ|、|\s|$)|新店|新規出店|開店|開院|開校|新規開業|新店舗/i;
-const NEGATIVE=/(?:FC|フランチャイズ|加盟(?:店|者|希望者|オーナー))\s*(?:の)?(?:募集|説明会|セミナー|相談会|個別相談)|(?:加盟者|オーナー|加盟店)募集|加盟店開発|独立支援セミナー|FCビジネス説明会|フランチャイズで開業する方法|開業資金の目安|フランチャイズランキング|(?:買取|売却)(?:価格|相場|実績)|価格改定|オンライン査定|キャンペーン開催|高価買取キャンペーン|期間限定(?:催事|イベント)|出張買取イベント|査定会|店舗数ランキング|業績発表|決算発表|株価|市場分析/i;
-// Car dealerships and vehicle-buying businesses are not the intended "買取専門店" category.
-// Apply only to valuables/reuse shops; do not change the 車販売 category.
-const VEHICLE_ONLY=/(?:中古車|新車|自動車|車両|廃車|事故車|車買取|車の買取|車を買取|バイク買取|バイクの買取|トラック買取|自動車買取|車屋|カーディーラー|カーセブン|ガリバー|カーショップ|軽自動車|車販売|自動車販売|クルマ買取)/i;
-const VEHICLE_CONTEXT=/(?:買取|査定|買い取り|売却|販売|ショップ|専門店|ディーラー)/i;
-function wrongBusiness(title,industry){return industry==='買取専門店'&&VEHICLE_ONLY.test(title)&&VEHICLE_CONTEXT.test(title)}
+// OPEN LEAD FINDER v4 — 22-industry opening discovery, conservative headline-based screening.
+// The output is candidate NEWS ARTICLES, never verified store openings.
+const MAX_SCANS = 4, MAX_RESULTS = 400;
+
+// Each category has an explicit retail-service match, a weaker contextual match,
+// and signals which indicate a different business or a non-opening event.
+const PROFILES = {
+  '買取専門店': {
+    strong: /買取(?:専門店|店)|買取大吉|おたからや|買取わかば|買取WAKABA|売るナビ|銀座屋|キングラム|さすがや|リサイクルマート|買取むすび|いくらや|ブランド(?:品)?買取(?:専門店|店)|貴金属買取(?:専門店|店)|金・プラチナ買取(?:専門店|店)/i,
+    weak: /ブランド(?:品)?買取|貴金属(?:買取|査定)|金(?:・プラチナ)?買取|リユースショップ|買取(?:サービス|業)/i,
+    wrong: /(?:中古車|新車|自動車|車両|廃車|事故車|バイク|トラック|カーセブン|ガリバー|車屋|カーショップ|ディーラー).{0,16}(?:買取|査定|販売|専門店)|(?:車|自動車|バイク|トラック)(?:の)?(?:買取|査定|販売)/i,
+    search: ['買取専門店','買取大吉','おたからや','買取わかば']
+  },
+  'ピラティス': {
+    strong: /(?:マシン)?ピラティス(?:スタジオ|専門店|教室)|pilates\s*(?:studio|スタジオ)|ピラティス/i,
+    weak: /マシンピラティス|pilates/i,
+    wrong: /(?:ピラティス|pilates).{0,16}(?:講座|レッスン動画|教材販売|資格取得|インストラクター養成|イベント開催|体験会のみ)/i,
+    search: ['ピラティス','マシンピラティス','pilates']
+  },
+  'パーソナルジム': {
+    strong: /パーソナル(?:トレーニング)?ジム|パーソナルトレーニング(?:スタジオ|専門店|ジム)|プライベートジム|マンツーマンジム/i,
+    weak: /パーソナルトレーニング|パーソナルトレーナー/i,
+    wrong: /(?:パーソナルトレーナー|パーソナルトレーニング).{0,16}(?:資格講座|養成講座|セミナー|講座開催)/i,
+    search: ['パーソナルジム','パーソナルトレーニング','プライベートジム']
+  },
+  '整体院': {
+    strong: /整体院|整体サロン|整体専門店|カイロプラクティック(?:院|サロン|センター)/i,
+    weak: /整体|カイロプラクティック/i,
+    wrong: /(?:整体|カイロプラクティック).{0,14}(?:オンライン講座|資格講座|セミナー|書籍発売)/i,
+    search: ['整体院','整体サロン','カイロプラクティック']
+  },
+  '接骨院': {
+    strong: /接骨院|整骨院|柔道整復(?:院|センター)/i,
+    weak: /柔道整復|接骨|整骨/i,
+    wrong: /(?:接骨|整骨|柔道整復).{0,12}(?:資格講座|試験対策|専門学校|セミナー)/i,
+    search: ['接骨院','整骨院']
+  },
+  '鍼灸院': {
+    strong: /鍼灸(?:院|サロン|専門院)|はり(?:・|と|きゅう)?きゅう(?:院|治療院)|鍼灸治療院/i,
+    weak: /鍼灸|はりきゅう|針灸/i,
+    wrong: /(?:鍼灸|はりきゅう).{0,14}(?:専門学校|資格試験|学会|セミナー|教育講座)/i,
+    search: ['鍼灸院','鍼灸サロン','鍼灸治療院']
+  },
+  'エステサロン': {
+    strong: /エステ(?:ティック)?サロン|痩身(?:専門店|サロン)|脱毛(?:専門店|サロン)|フェイシャル(?:専門店|サロン)/i,
+    weak: /エステ|痩身|脱毛|フェイシャル/i,
+    wrong: /(?:エステ|脱毛|痩身).{0,15}(?:新メニュー|コース開始|施術導入|美容機器発売|体験会のみ)/i,
+    search: ['エステサロン','脱毛サロン','痩身サロン']
+  },
+  '美容室': {
+    strong: /美容室|美容院|ヘアサロン|ヘアーサロン|hair\s*salon|美容所/i,
+    weak: /美容師|ヘアスタイリスト|ヘアメイク/i,
+    wrong: /(?:美容室|美容院|ヘアサロン).{0,16}(?:新メニュー|新商品|リニューアルのみ|髪型紹介|キャンペーン)/i,
+    search: ['美容室','ヘアサロン','美容院']
+  },
+  'ネイルサロン': {
+    strong: /ネイルサロン|ネイル専門店|nail\s*salon/i,
+    weak: /ネイル(?:施術|ケア|サービス|ショップ)?/i,
+    wrong: /(?:ネイル|nail).{0,16}(?:新商品|新色|チップ販売|資格試験|講座開催)/i,
+    search: ['ネイルサロン','ネイル専門店']
+  },
+  'アイラッシュサロン': {
+    strong: /アイラッシュサロン|まつ[毛げ]サロン|まつ[毛げ](?:エクステ|パーマ)(?:専門店|サロン)|眉毛(?:専門店|サロン)|アイブロウサロン|eyelash\s*salon/i,
+    weak: /アイラッシュ|まつ[毛げ]|アイブロウ|眉毛/i,
+    wrong: /(?:まつげ|まつ毛|眉毛|アイラッシュ).{0,16}(?:美容液発売|講座開催|新メニュー導入)/i,
+    search: ['アイラッシュサロン','まつげサロン','眉毛サロン']
+  },
+  '個別指導塾': {
+    strong: /個別指導(?:塾|学院|スクール|教室)|個別学習塾|個別指導/i,
+    weak: /学習塾|進学塾|塾(?:の|が|を|に|で|、|\s|$)/i,
+    wrong: /(?:塾|個別指導).{0,18}(?:春期講習|夏期講習|冬期講習|新講座|模試|教育セミナー|オンライン授業開始)/i,
+    search: ['個別指導塾','個別指導','学習塾']
+  },
+  '英会話教室': {
+    strong: /英会話(?:教室|スクール|学校|スタジオ)|英語(?:教室|スクール)|English\s*(?:school|conversation\s*school)/i,
+    weak: /英会話|英語レッスン/i,
+    wrong: /(?:英会話|英語).{0,16}(?:オンライン講座開始|教材販売|新講座|英検対策|無料セミナー)/i,
+    search: ['英会話教室','英会話スクール','英語教室']
+  },
+  'そろばん教室': {
+    strong: /そろばん(?:教室|スクール|塾)|珠算(?:教室|塾|スクール)/i,
+    weak: /そろばん|珠算/i,
+    wrong: /(?:そろばん|珠算).{0,14}(?:大会|検定|試験|教材|通信講座)/i,
+    search: ['そろばん教室','珠算教室']
+  },
+  'トリミングサロン': {
+    strong: /トリミング(?:サロン|専門店|ショップ|店)|ドッグサロン|ペット(?:美容室|サロン)|犬(?:の)?美容室/i,
+    weak: /トリミング|ペット美容/i,
+    wrong: /(?:トリミング|ペット美容).{0,16}(?:講座|資格|イベント|犬種別の方法|ハサミ発売)/i,
+    search: ['トリミングサロン','ドッグサロン','ペット美容室']
+  },
+  'カーコーティング': {
+    strong: /カーコーティング(?:専門店|店|ショップ)|コーティング(?:専門店|ショップ)|自動車(?:ボディ)?コーティング(?:店|専門店)|ガラスコーティング(?:専門店|店)/i,
+    weak: /カーコーティング|車(?:の)?コーティング|自動車(?:ボディ)?コーティング/i,
+    wrong: /(?:コーティング|車体).{0,16}(?:新商品発売|施工事例|技術発表|材料販売)/i,
+    search: ['カーコーティング専門店','カーコーティング','コーティング専門店']
+  },
+  '中古車販売': {
+    strong: /中古車(?:販売(?:店|専門店)|専門店|ショップ)|カーショップ|自動車販売店|(?:中古車|車)ディーラー|オート(?:プラザ|ガレージ)/i,
+    weak: /中古車販売|中古車|自動車販売/i,
+    wrong: /(?:中古車|自動車).{0,16}(?:相場|値上げ|ランキング|新車種発売|買取価格)/i,
+    search: ['中古車販売店','中古車専門店','カーショップ']
+  },
+  'ハウスクリーニング': {
+    strong: /ハウスクリーニング(?:専門店|店|サービス)|おそうじ本舗|おそうじ革命|エアコンクリーニング(?:専門店|店)|清掃(?:サービス|専門店)/i,
+    weak: /ハウスクリーニング|エアコンクリーニング|おそうじ/i,
+    wrong: /(?:クリーニング|掃除|おそうじ).{0,18}(?:方法|コツ|洗剤発売|ロボット発売|特集記事)/i,
+    search: ['ハウスクリーニング','おそうじ本舗','おそうじ革命']
+  },
+  '外壁塗装': {
+    strong: /外壁塗装(?:専門店|店|ショールーム)|塗装(?:専門店|ショールーム|会社|店)|屋根塗装(?:専門店|店)/i,
+    weak: /外壁塗装|屋根塗装|住宅塗装/i,
+    wrong: /(?:外壁塗装|屋根塗装).{0,18}(?:施工事例|料金比較|塗料発売|価格相場)/i,
+    search: ['外壁塗装専門店','外壁塗装','塗装ショールーム']
+  },
+  'リフォーム': {
+    strong: /リフォーム(?:専門店|店|ショールーム|ショップ|センター|会社)|リノベーション(?:専門店|ショールーム|ショップ)|住宅(?:リフォーム|改修)(?:専門店|ショールーム)/i,
+    weak: /リフォーム|リノベーション|住宅改修/i,
+    wrong: /(?:リフォーム|リノベーション).{0,16}(?:施工事例|完成見学会|工事完了|事例紹介|価格相場)/i,
+    search: ['リフォーム専門店','リフォームショールーム','リノベーション専門店']
+  },
+  'ドライヘッドスパ': {
+    strong: /ドライヘッドスパ(?:専門店|サロン|店)|ヘッドスパ(?:専門店|サロン)|ヘッドマッサージ(?:専門店|サロン)/i,
+    weak: /ドライヘッドスパ|ヘッドスパ|ヘッドマッサージ/i,
+    wrong: /(?:ヘッドスパ|ヘッドマッサージ).{0,18}(?:新メニュー導入|シャンプー発売|美容機器発売|講座開催)/i,
+    search: ['ドライヘッドスパ専門店','ヘッドスパ専門店','ドライヘッドスパ']
+  },
+  'コインランドリー': {
+    strong: /コインランドリー|セルフランドリー|無人ランドリー|ランドリー(?:店舗|専門店|ショップ)/i,
+    weak: /ランドリー/i,
+    wrong: /(?:ランドリー|洗濯).{0,17}(?:家電発売|洗剤発売|洗濯方法|機械展示会)/i,
+    search: ['コインランドリー','セルフランドリー']
+  },
+  'ペットホテル': {
+    strong: /ペットホテル|ドッグホテル|犬(?:の)?ホテル|ペット宿泊(?:施設|サービス)/i,
+    weak: /ペット(?:預かり|宿泊)|犬(?:の)?預かり/i,
+    wrong: /(?:ペットホテル|ドッグホテル).{0,18}(?:比較ランキング|旅行記事|旅行プラン紹介)/i,
+    search: ['ペットホテル','ドッグホテル']
+  }
+};
+
 const PREFECTURES=['北海道','青森','岩手','宮城','秋田','山形','福島','茨城','栃木','群馬','埼玉','千葉','東京','神奈川','新潟','富山','石川','福井','山梨','長野','岐阜','静岡','愛知','三重','滋賀','京都','大阪','兵庫','奈良','和歌山','鳥取','島根','岡山','広島','山口','徳島','香川','愛媛','高知','福岡','佐賀','長崎','熊本','大分','宮崎','鹿児島','沖縄'];
 const CITIES={
 '愛知':['名古屋','豊橋','一宮','岡崎','豊田市','安城','刈谷','春日井','小牧','半田','瀬戸','豊川','西尾','蒲郡','稲沢','大府','東海市','知多市','愛西','長久手','日進市','清須','北名古屋','尾張旭','常滑','知立','豊明','津島','碧南','江南','犬山','岩倉','高浜','田原','弥富','あま市','蟹江','幸田','豊山'],
@@ -23,53 +151,49 @@ const CITIES={
 '長野':['長野市','松本','上田','佐久','飯田','安曇野','諏訪','塩尻','伊那','千曲','岡谷','須坂','駒ヶ根'],
 '新潟':['新潟市','長岡','上越','三条','新発田','燕市','柏崎','見附','十日町','魚沼','妙高','糸魚川'],
 '山梨':['甲府','甲斐','南アルプス','笛吹','中央市','富士吉田','都留','山梨市','韮崎','北杜','大月']};
-const INDUSTRY_KEYWORDS={
-'買取専門店':/(買取専門店|買取店|買取大吉|おたからや|買取わかば|買取WAKABA|売るナビ|銀座屋|キングラム|さすがや|リサイクルマート|いくらや|買取1丁目|買取壱番屋|ブランド買取|金買取|買取むすび|大吉\s*[^\s]{0,18}店)/i,
-'ピラティス':/(ピラティス|pilates)/i,
-'パーソナルジム':/(パーソナル(?:トレーニング|ジム)|プライベートジム)/i,
-'整体院':/(整体|カイロプラクティック)/i,
-'接骨院':/(接骨院|整骨院)/i,
-'鍼灸院':/(鍼灸|はりきゅう)/i,
-'エステサロン':/(エステ|痩身|脱毛サロン)/i,
-'美容室':/(美容室|美容院|ヘアサロン|hair salon)/i,
-'ネイルサロン':/(ネイルサロン|ネイル専門店)/i,
-'アイラッシュサロン':/(アイラッシュ|まつ毛|まつげ|眉毛サロン)/i,
-'個別指導塾':/(個別指導|学習塾|進学塾)/i,
-'英会話教室':/(英会話|英語教室)/i,
-'そろばん教室':/(そろばん|珠算教室)/i,
-'トリミングサロン':/(トリミング|ドッグサロン|ペットサロン)/i,
-'カーコーティング':/(カーコーティング|ガラスコーティング|車コーティング)/i,
-'中古車販売':/(中古車|カーショップ|自動車販売店)/i,
-'ハウスクリーニング':/(ハウスクリーニング|おそうじ本舗|おそうじ革命|エアコンクリーニング)/i,
-'外壁塗装':/(外壁塗装|屋根塗装|塗装専門店)/i,
-'リフォーム':/(リフォーム|住宅改修|リノベーション)/i,
-'ドライヘッドスパ':/(ヘッドスパ|ヘッドマッサージ)/i,
-'コインランドリー':/(コインランドリー|ランドリー)/i,
-'ペットホテル':/(ペットホテル|ドッグホテル)/i
-};
+const OPEN_STRONG=/(新(?:規|たに)?(?:店舗|出店|開業|開店|開院|開校|教室|スタジオ|サロン)|新店(?:舗)?(?:が|を|に|で|、|\s|オープン|OPEN)|グランドオープン|プレオープン|ニューオープン|(?:店舗|スタジオ|サロン|専門店|教室|校舎|院|営業所|ショールーム|店舗型施設).{0,22}(?:新(?:規)?(?:開設|開店|オープン)|オープン|OPEN|開院|開校|出店)|(?:開業|開院|開校|開店|出店|OPEN|オープン)(?:する|した|予定|を発表|へ|！|!|、|\s|$).{0,20}(?:店舗|教室|専門店|サロン|スタジオ|店|院|校)|(?:新規|新たに).{0,16}(?:オープン|OPEN|開院|開校|開店|出店)|(?:オープン|OPEN|開店|開業|開院|開校)予定)/i;
+const OPEN_WEAK=/(オープン|OPEN|開業|開院|開校|開店|出店|新店舗|新教室|新スタジオ|新サロン|新拠点)/i;
+const PLACE_SIGNAL=/(?:店|店舗|スタジオ|サロン|教室|スクール|整骨院|接骨院|整体院|鍼灸院|クリニック|ショップ|営業所|事業所|施設|ショールーム|校舎|支店|センター|ジム|ホテル)(?:が|を|に|で|の|へ|、|\s|$)|新店舗|新教室|新スタジオ|新サロン|新規出店|開店|開院|開校/i;
+const HARD_NOISE=/(?:加盟(?:希望者|オーナー|店)|FC|フランチャイズ).{0,12}(?:募集|説明会|セミナー|相談会|資料請求)|(?:オーナー|加盟店)募集|フランチャイズランキング|開業資金の目安|起業セミナー|開業の方法|(?:価格|相場|料金)ランキング|決算発表|株価|業績発表|市場分析|買収発表|新(?:商品|サービス|メニュー|コース|講座)(?:を)?(?:発売|追加|開始|導入|発表)|キャンペーン開催|期間限定(?:催事|イベント)|オープンキャンパス|オープンソース|オープンAI|オープン戦|オープンデータ/i;
+const SOFT_NOISE=/(求人|オープニングスタッフ|従業員募集|スタッフ募集|体験会|説明会|キャンペーン|期間限定|リニューアル|移転オープン|開店記念|無料体験|内覧会|イベント開催)/i;
 const headers={'Content-Type':'application/json; charset=utf-8','Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'POST, OPTIONS','Access-Control-Allow-Headers':'Content-Type','Cache-Control':'no-store'};
 const respond=(data,status=200)=>new Response(JSON.stringify(data),{status,headers});
-function xmlText(s=''){return s.replace(/^<!\[CDATA\[([\s\S]*?)\]\]>$/,'$1').replace(/&(#x[0-9a-f]+|#\d+|amp|quot|apos|lt|gt|nbsp);/gi,(all,x)=>{const t=x.toLowerCase(),m={amp:'&',quot:'"',apos:"'",lt:'<',gt:'>',nbsp:' '};if(m[t])return m[t];const n=t.startsWith('#x')?parseInt(t.slice(2),16):parseInt(t.slice(1),10);return Number.isFinite(n)&&n>0&&n<=0x10ffff?String.fromCodePoint(n):all;})}
+const normalize=s=>String(s??'').normalize('NFKC').replace(/\s+/g,' ').trim();
+const escapeRegExp=s=>String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+function xmlText(s=''){return String(s).replace(/^<!\[CDATA\[([\s\S]*?)\]\]>$/,'$1').replace(/&(#x[0-9a-f]+|#\d+|amp|quot|apos|lt|gt|nbsp);/gi,(all,x)=>{const t=x.toLowerCase(),m={amp:'&',quot:'"',apos:"'",lt:'<',gt:'>',nbsp:' '};if(m[t])return m[t];const n=t.startsWith('#x')?parseInt(t.slice(2),16):parseInt(t.slice(1),10);return Number.isFinite(n)&&n>0&&n<=0x10ffff?String.fromCodePoint(n):all})}
 function field(xml,tag){const m=xml.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`,'i'));return m?xmlText(m[1].trim()).replace(/<[^>]+>/g,'').trim():''}
-function parseRSS(xml){return [...xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi)].slice(0,80).map(([,z])=>({title:field(z,'title'),url:field(z,'link'),source:field(z,'source'),publishedAt:field(z,'pubDate')})).filter(x=>x.title&&/^https:\/\//.test(x.url))}
+function parseRSS(xml){return [...String(xml).matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi)].slice(0,80).map(([,z])=>({title:field(z,'title'),url:field(z,'link'),source:field(z,'source'),publishedAt:field(z,'pubDate')})).filter(x=>x.title&&/^https:\/\//.test(x.url))}
 const validName=x=>typeof x==='string'&&x.trim().length>0&&x.trim().length<75&&!/[\x00-\x1f]/.test(x);
-function validate(x){if(!x||!['industries','regions','months'].every(k=>Array.isArray(x[k])))return null;const industries=[...new Set(x.industries.filter(validName).map(t=>t.trim()))].slice(0,12),regions=[...new Set(x.regions.filter(validName).map(t=>t.trim()))].slice(0,12),months=[...new Set(x.months.filter(s=>typeof s==='string'&&/^20\d{2}-(0[1-9]|1[0-2])$/.test(s)))].slice(0,18);if(!industries.length||!regions.length||!months.length)return null;const offset=Number.isInteger(x.offset)&&x.offset>=0&&x.offset<=3000?x.offset:0;const mode=['general','preopen','fc'].includes(x.mode)?x.mode:'general';return {industries,regions,months,offset,mode}}
-function term(i,r,m,mode){const [y,n]=m.split('-').map(Number);const industries=i==='買取専門店'?'(買取専門店 OR 買取大吉 OR おたからや OR 買取わかば OR いくらや)':`"${i}"`;
-const openings=mode==='preopen'?'(オープン予定 OR 開店予定 OR 開業予定 OR 新店舗)':mode==='fc'?'(新店舗 OR 新規出店 OR オープン OR 開店)':'(新店舗 OR オープン OR 開店 OR 開業)';
-const excluding='-加盟者募集 -加盟店募集 -FC募集 -買取相場 -買取実績 -キャンペーン'+(i==='買取専門店'?' -車買取 -中古車買取 -自動車買取 -自動車販売 -車販売 -中古車販売 -車屋':'');return `${industries} "${r}" ("${y}年${n}月" OR "${n}月") ${openings} ${excluding}`}
+function validate(x){if(!x||!['industries','regions','months'].every(k=>Array.isArray(x[k])))return null;const industries=[...new Set(x.industries.filter(validName).map(t=>t.trim()))].slice(0,30),regions=[...new Set(x.regions.filter(validName).map(t=>t.trim()))].slice(0,12),months=[...new Set(x.months.filter(s=>typeof s==='string'&&/^20\d{2}-(0[1-9]|1[0-2])$/.test(s)))].slice(0,18);if(!industries.length||!regions.length||!months.length)return null;const offset=Number.isInteger(x.offset)&&x.offset>=0&&x.offset<=10000?x.offset:0;const mode=['general','preopen','fc'].includes(x.mode)?x.mode:'general';return {industries,regions,months,offset,mode}}
+function term(industry,region,month,mode){const [y,m]=month.split('-').map(Number);const profile=PROFILES[industry];const terms=profile?.search||[industry];const cat=terms.slice(0,4).map(t=>'"'+t+'"').join(' OR ');const op=mode==='preopen'?'("オープン予定" OR "開業予定" OR "新店舗")':mode==='fc'?'("新店舗" OR "加盟店オープン" OR "新規出店")':'("新規オープン" OR "新店舗" OR "開業" OR "開校" OR "開院")';return `(${cat}) "${region}" ("${y}年${m}月" OR "${m}月") ${op} -加盟者募集 -開業セミナー -キャンペーン`}
 function scanPlan(c){const all=[];for(const m of c.months)for(const i of c.industries)for(const r of c.regions)all.push({industry:i,region:r,month:m,mode:c.mode,query:term(i,r,m,c.mode)});return {scans:all.slice(c.offset,c.offset+MAX_SCANS),total:all.length,offset:c.offset,nextOffset:Math.min(all.length,c.offset+MAX_SCANS)}}
-function normalizeTitle(t,source=''){let out=String(t||'').normalize('NFKC').trim();if(source){for(const sep of [' - ',' | ','｜'])if(out.endsWith(sep+source))out=out.slice(0,-(sep+source).length)}return out}
-function industryMatched(title,industry){if(wrongBusiness(title,industry))return false;const re=INDUSTRY_KEYWORDS[industry];return re?re.test(title):title.toLowerCase().includes(industry.toLowerCase())}
-function regionMatched(title,region){if(title.includes(region))return true;return (CITIES[region]||[]).some(c=>title.includes(c))}
-function explicitOtherRegion(title,region){const mentioned=PREFECTURES.filter(r=>title.includes(r+'県')||title.includes(r+'都')||title.includes(r+'府')||title.includes(r+'道'));return mentioned.length>0&&!mentioned.includes(region)}
-function monthSignal(title,month){const [year,mon]=month.split('-').map(Number);const full=[...title.matchAll(/(20\d{2})年\s*(1[0-2]|0?[1-9])月/g)].map(m=>[+m[1],+m[2]]);if(full.length){if(full.some(([y,n])=>y===year&&n===mon))return 'match';if(full.some(([y,n])=>y===year&&n!==mon))return 'other';if(full.every(([y])=>y!==year))return 'other';}const simple=[...title.matchAll(/(?:^|[^\d])(1[0-2]|0?[1-9])月/g)].map(m=>+m[1]);if(simple.includes(mon))return 'month-only';if(simple.length)return 'other';return 'unknown'}
-function classify(article){const title=normalizeTitle(article.title,article.source);const brand=article.industry==='買取専門店'&&/(買取大吉|おたからや|買取わかば|買取WAKABA|売るナビ|銀座屋|キングラム|さすがや|いくらや|買取むすび)/i.test(title);const opening=OPEN_EVENT.test(title)|| (OPEN_GENERIC.test(title)&&(STORE_SIGNAL.test(title)||brand));const store=STORE_SIGNAL.test(title);const industry=industryMatched(title,article.industry);const region=regionMatched(title,article.region);const wrongRegion=explicitOtherRegion(title,article.region);const m=monthSignal(title,article.month);const automotive=wrongBusiness(title,article.industry);const blocked=NEGATIVE.test(title)||automotive;const reasons=[];if(automotive)reasons.push('車買取・中古車販売等の別業種');if(opening)reasons.push('新規開業・開店の表現');if(industry)reasons.push('業種・ブランド一致');if(region)reasons.push('対象地域一致');if(m==='match')reasons.push('対象年月一致');else if(m==='month-only')reasons.push('対象月一致（年未確認）');if(store)reasons.push('店舗の記述');let score=(opening?30:0)+(industry?24:0)+(region?23:0)+(store?12:0)+(m==='match'?14:m==='month-only'?8:0);
-if(wrongRegion)score-=70;if(m==='other')score-=45;if(blocked)score-=80;if(!opening)score-=30;if(!industry)score-=15;if(automotive)score-=70;
-let quality='noise';if(opening&&industry&&region&&store&&!wrongRegion&&!blocked&&m!=='other'&&score>=80)quality='high';else if(opening&&industry&&!wrongRegion&&!blocked&&m!=='other')quality='review';else if(opening&&industry&&region&&!blocked&&m==='other')quality='review';
-return {quality,score,reasons,signal:HEADLINE.test(title)?'opening':'review',monthEvidence:m}}
-async function fetchRSS(scan,fetchFn=fetch){const url='https://news.google.com/rss/search?'+new URLSearchParams({q:scan.query,hl:'ja',gl:'JP',ceid:'JP:ja'}).toString();const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),5500);try{const res=await fetchFn(url,{signal:ctl.signal,headers:{'Accept':'application/rss+xml, application/xml;q=0.9, text/xml;q=0.8','User-Agent':'Mozilla/5.0'}});if(!res.ok)throw new Error('News source status '+res.status);const xml=await res.text();if(!xml.includes('<rss')&&!xml.includes('<item'))throw new Error('Invalid RSS');return parseRSS(xml).map(a=>({...a,...scan,...classify({...a,...scan})}))}finally{clearTimeout(timer)}}
+function normalizeTitle(title,source=''){let out=normalize(title);if(source){for(const sep of [' - ',' | ','｜'])if(out.endsWith(sep+source))out=out.slice(0,-(sep+source).length)}return out}
+function industryEvidence(title,industry){const p=PROFILES[industry];if(!p){return {level:normalize(title).toLowerCase().includes(normalize(industry).toLowerCase())?'weak':'none',wrong:false,known:false}}
+const wrong=!!(p.wrong?.test(title));return {level:p.strong.test(title)?'strong':p.weak?.test(title)?'weak':'none',wrong,known:true}}
+function regionEvidence(title,region){if(title.includes(region))return {matched:true,kind:'prefecture'};if((CITIES[region]||[]).some(c=>title.includes(c)))return {matched:true,kind:'city'};return {matched:false,kind:'unknown'}}
+function otherRegion(title,region,matched){if(matched)return false;const others=PREFECTURES.filter(r=>r!==region&&new RegExp(escapeRegExp(r)+'(?:都|道|府|県)').test(title));return others.length>0}
+function monthEvidence(title,month){const [year,m]=month.split('-').map(Number);const explicit=[...title.matchAll(/(20\d{2})年\s*(1[0-2]|0?[1-9])月/g)].map(a=>[+a[1],+a[2]]);if(explicit.length){return explicit.some(([y,n])=>y===year&&n===m)?'match':'other'}const mons=[...title.matchAll(/(?:^|[^\d])(1[0-2]|0?[1-9])月/g)].map(a=>+a[1]);if(mons.length)return mons.includes(m)?'month-only':'other';return 'unknown'}
+function publicationPlausible(publishedAt,month){const time=Date.parse(publishedAt||'');if(!Number.isFinite(time))return null;const [y,m]=month.split('-').map(Number);const earliest=Date.UTC(y,m-7,1);const latest=Date.UTC(y,m+3,1);return time>=earliest&&time<latest}
+function monthOnlyRecent(publishedAt,month){const d=Date.parse(publishedAt||'');if(!Number.isFinite(d))return false;const [y,m]=month.split('-').map(Number),start=Date.UTC(y,m-1,1),end=Date.UTC(y,m,1);return d>=start-100*86400000&&d<end+45*86400000}
+function extractDateCandidate(title){const m=title.match(/(?:20\d{2}年\s*)?(?:1[0-2]|0?[1-9])月\s*(?:3[01]|[12]\d|0?[1-9])日/);return m?m[0].replace(/\s+/g,''):''}
+function classify(article){const title=normalizeTitle(article.title,article.source);const ie=industryEvidence(title,article.industry),re=regionEvidence(title,article.region),month=monthEvidence(title,article.month),plausible=publicationPlausible(article.publishedAt,article.month);const opening=OPEN_STRONG.test(title),openWeak=OPEN_WEAK.test(title),physical=PLACE_SIGNAL.test(title);const wrongRegion=otherRegion(title,article.region,re.matched),hard=HARD_NOISE.test(title),soft=SOFT_NOISE.test(title),industryNoise=ie.wrong;const reasons=[],warnings=[];
+if(ie.level==='strong')reasons.push('業種を明示');else if(ie.level==='weak')reasons.push('業種に関連する語');else warnings.push('業種を確認できない');
+if(opening)reasons.push('新店舗・開業の表現');else if(openWeak)warnings.push('開業の表現が曖昧');else warnings.push('開業を示す語がない');
+if(physical)reasons.push('実店舗・施設の表現');else warnings.push('実店舗か未確認');
+if(re.matched)reasons.push(re.kind==='city'?'対象地域の市名が一致':'対象都道府県が一致');else warnings.push('対象地域を見出しで未確認');
+if(month==='match')reasons.push('対象年月が一致');else if(month==='month-only')warnings.push('対象月が一致（年未確認）');else if(month==='unknown')warnings.push('開業年月が見出しにない');else warnings.push('異なる年月の記載');
+if(soft)warnings.push('求人・催事・移転等の可能性');if(hard)warnings.push('開業以外の告知の可能性');if(industryNoise)warnings.push('他業種の内容が優勢');if(wrongRegion)warnings.push('他県の情報の可能性');if(plausible===false&&month!=='match')warnings.push('記事公開日が対象月から離れている');
+let score=(ie.level==='strong'?30:ie.level==='weak'?12:0)+(opening?25:openWeak?7:0)+(physical?10:0)+(re.matched?20:0)+(month==='match'?20:month==='month-only'?8:0)-(hard?65:0)-(industryNoise?60:0)-(wrongRegion?55:0)-(month==='other'?42:0)-(plausible===false&&month!=='match'?35:0)-(soft?8:0);
+// Safely bias toward precision: HIGH means all major signals in the headline;
+// REVIEW retains plausible matches with missing region/date evidence.
+const strongMonth=month==='match'||(month==='month-only'&&monthOnlyRecent(article.publishedAt,article.month));let quality='noise';const plausibleArticle=ie.level!=='none'&&openWeak&&!industryNoise&&!hard&&!wrongRegion&&month!=='other'&&plausible!==false;
+if(plausibleArticle&&ie.level==='strong'&&opening&&physical&&re.matched&&strongMonth&&!soft&&score>=90)quality='high';
+else if(plausibleArticle&&((opening&&(re.matched||month==='match'||physical))||(ie.level==='strong'&&re.matched&&openWeak)))quality='review';
+return {quality,score,reasons,warnings,signal:openWeak?'opening':'unconfirmed',monthEvidence:month,openingDateText:extractDateCandidate(title),evidenceLevel:ie.level}}
+async function fetchRSS(scan,fetchFn=fetch){const url='https://news.google.com/rss/search?'+new URLSearchParams({q:scan.query,hl:'ja',gl:'JP',ceid:'JP:ja'}).toString();const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),6000);try{const res=await fetchFn(url,{signal:ctl.signal,headers:{Accept:'application/rss+xml, application/xml;q=0.9, text/xml;q=0.8','User-Agent':'Mozilla/5.0'}});if(!res.ok)throw new Error('News source status '+res.status);const xml=await res.text();if(!xml.includes('<rss')&&!xml.includes('<item'))throw new Error('Invalid RSS');return parseRSS(xml).map(a=>({...a,...scan,...classify({...a,...scan})}))}finally{clearTimeout(timer)}}
 function articleId(title,source=''){const norm=normalizeTitle(title,source).normalize('NFKC').replace(/\s+/g,'').toLowerCase();let hash=2166136261;for(let i=0;i<norm.length;i++){hash^=norm.charCodeAt(i);hash=Math.imul(hash,16777619)}return (hash>>>0).toString(36)+'-'+norm.slice(0,30)}
-function unique(out){const ids=new Set(),result=[];for(const a of out){const id=articleId(a.title,a.source);if(ids.has(id))continue;ids.add(id);const t=Date.parse(a.publishedAt);result.push({id,title:a.title,url:a.url,source:a.source,publishedAt:Number.isFinite(t)?new Date(t).toISOString():'',industry:a.industry,region:a.region,month:a.month,mode:a.mode,signal:a.signal,quality:a.quality,score:a.score,reasons:a.reasons,monthEvidence:a.monthEvidence,query:a.query});if(result.length>=MAX_RESULTS)break}const level={high:0,review:1,noise:2};return result.sort((a,b)=>(level[a.quality]-level[b.quality])||(b.score-a.score)||Date.parse(b.publishedAt||0)-Date.parse(a.publishedAt||0))}
-export default async function handler(request){if(request.method==='OPTIONS')return new Response(null,{status:204,headers});if(request.method==='GET'&&new URL(request.url).searchParams.get('health')==='1')return respond({ok:true,version:'v3.3',function:'search-openings'});if(request.method!=='POST')return respond({error:'POSTのみ対応しています。'},405);
-let payload;try{const s=await request.text();if(s.length>15000)return respond({error:'検索条件が大きすぎます。'},413);payload=JSON.parse(s)}catch{return respond({error:'検索条件の形式が正しくありません。'},400)}const c=validate(payload);if(!c)return respond({error:'業種・地域・月を選択してください。'},400);const plan=scanPlan(c);if(!plan.scans.length)return respond({articles:[],meta:{searched:0,failed:0,totalCombos:plan.total,offset:plan.offset,nextOffset:plan.nextOffset,hasMore:false,rawHits:0}});const out=[],errors=[];let cursor=0;async function worker(){while(cursor<plan.scans.length){const s=plan.scans[cursor++];try{out.push(...await fetchRSS(s))}catch(e){errors.push(String(e?.message||e))}}}await Promise.all(Array.from({length:Math.min(4,plan.scans.length)},()=>worker()));if(errors.length===plan.scans.length){console.warn('[OLF] RSS failure',errors.slice(0,3));return respond({error:'GoogleニュースRSSに接続できませんでした。深掘り検索タブのGoogle検索をお試しください。',diagnostic:{kind:'rss-unavailable',attempted:plan.scans.length,firstError:errors[0]?.slice(0,150)}},502)}const articles=unique(out);const counts={high:articles.filter(a=>a.quality==='high').length,review:articles.filter(a=>a.quality==='review').length,noise:articles.filter(a=>a.quality==='noise').length};return respond({articles,meta:{searched:plan.scans.length,failed:errors.length,totalCombos:plan.total,offset:plan.offset,nextOffset:plan.nextOffset,hasMore:plan.nextOffset<plan.total,rawHits:out.length,unique:articles.length,qualityCounts:counts}})}
-export {parseRSS,validate,scanPlan,unique,articleId,classify,term,monthSignal,normalizeTitle,wrongBusiness};
+function unique(out){const map=new Map(),order={high:2,review:1,noise:0};for(const a of out){const id=articleId(a.title,a.source),prev=map.get(id);if(prev&&(order[prev.quality]>order[a.quality]||(order[prev.quality]===order[a.quality]&&prev.score>=a.score)))continue;map.set(id,{...a,id})}return [...map.values()].slice(0,MAX_RESULTS).map(a=>{const t=Date.parse(a.publishedAt);return {id:a.id,title:a.title,url:a.url,source:a.source,publishedAt:Number.isFinite(t)?new Date(t).toISOString():'',industry:a.industry,region:a.region,month:a.month,mode:a.mode,signal:a.signal,quality:a.quality,score:a.score,reasons:a.reasons,warnings:a.warnings,monthEvidence:a.monthEvidence,openingDateText:a.openingDateText,evidenceLevel:a.evidenceLevel,query:a.query}}).sort((a,b)=>(order[b.quality]-order[a.quality])||(b.score-a.score)||Date.parse(b.publishedAt||0)-Date.parse(a.publishedAt||0))}
+export default async function handler(request){if(request.method==='OPTIONS')return new Response(null,{status:204,headers});if(request.method==='GET'&&new URL(request.url).searchParams.get('health')==='1')return respond({ok:true,version:'v4.0',function:'search-openings',profileCount:Object.keys(PROFILES).length});if(request.method!=='POST')return respond({error:'POSTのみ対応しています。'},405);
+let payload;try{const s=await request.text();if(s.length>15000)return respond({error:'検索条件が大きすぎます。'},413);payload=JSON.parse(s)}catch{return respond({error:'検索条件の形式が正しくありません。'},400)}const c=validate(payload);if(!c)return respond({error:'業種・地域・月を選択してください。'},400);const plan=scanPlan(c);if(!plan.scans.length)return respond({articles:[],meta:{searched:0,failed:0,totalCombos:plan.total,offset:plan.offset,nextOffset:plan.nextOffset,hasMore:false,rawHits:0}});
+const out=[],errors=[];let cursor=0;async function worker(){while(cursor<plan.scans.length){const s=plan.scans[cursor++];try{out.push(...await fetchRSS(s))}catch(e){errors.push(String(e?.message||e))}}}await Promise.all(Array.from({length:Math.min(4,plan.scans.length)},()=>worker()));if(errors.length===plan.scans.length){console.warn('[OLF v4] RSS failure',errors.slice(0,3));return respond({error:'GoogleニュースRSSに接続できませんでした。深掘り検索のGoogle検索をお試しください。',diagnostic:{kind:'rss-unavailable',attempted:plan.scans.length,firstError:errors[0]?.slice(0,150)}},502)}const articles=unique(out),qualityCounts={high:articles.filter(a=>a.quality==='high').length,review:articles.filter(a=>a.quality==='review').length,noise:articles.filter(a=>a.quality==='noise').length};return respond({articles,meta:{searched:plan.scans.length,failed:errors.length,totalCombos:plan.total,offset:plan.offset,nextOffset:plan.nextOffset,hasMore:plan.nextOffset<plan.total,rawHits:out.length,unique:articles.length,qualityCounts}})}
+export {PROFILES,parseRSS,validate,scanPlan,unique,articleId,classify,term,monthEvidence,normalizeTitle,industryEvidence,regionEvidence,publicationPlausible};
