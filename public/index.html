@@ -13,7 +13,7 @@
 </style>
 </head>
 <body>
-<header><div class="brand"><div class="symbol">⌕</div><div><b>OPEN LEAD FINDER</b><small>NEW OPENING DISCOVERY</small></div></div><span class="header-badge">v3.2 · 開業情報精度改善</span></header>
+<header><div class="brand"><div class="symbol">⌕</div><div><b>OPEN LEAD FINDER</b><small>NEW OPENING DISCOVERY</small></div></div><span class="header-badge">v3.3 · 買取FC発掘強化</span></header>
 <main class="container">
 <section class="hero"><div><span class="tag">FIND NEW BUSINESS. FIRST.</span><h1>新規開業の情報を、誰よりも早く。</h1><p>公開ニュースを自動チェック。求人・フランチャイズ・SNSも専用検索で深掘り。営業管理は会社のシステムに任せ、ここでは「見つける」ことだけに集中します。</p></div><div class="hero-n"><strong id="heroCount">0</strong><span>有力な開業候補</span></div></section>
 <div class="workspace"><aside class="card side">
@@ -26,14 +26,24 @@
 <div class="summary">✓ 検索結果の重複を整理<br>✓ 前回までに見つけた記事を区別<br>✓ 気になる記事だけ一時保存<br>✓ 検索結果をCSVで出力</div>
 </aside>
 <section class="card mainpanel"><nav class="tabbar" aria-label="探索方法"><button class="tab active" data-tab="news">⚡ 自動ニュース探索</button><button class="tab" data-tab="deep">🔍 深掘り検索</button><button class="tab" data-tab="clips">★ 保存した記事</button></nav>
-<div id="newsTab" class="content"><div class="content-head"><div><h2>新規開業ニュースをまとめて探す</h2><p class="subtitle">記事タイトルの業種・地域・新規開業表現を照合し、有力な開店候補を優先表示します。</p></div><button class="btn sm" id="exportNews" disabled>CSV出力</button></div>
+<div id="newsTab" class="content"><div class="content-head"><div><h2>新規開業ニュースをまとめて探す</h2><p class="subtitle">記事タイトルの業種・地域・新規開業表現を照合。車買取・中古車販売等の別業種は優先候補から除外します。</p></div><button class="btn sm" id="exportNews" disabled>CSV出力</button></div>
 <div class="stats"><div class="stat"><b id="newsCount">0</b><span>表示候補</span></div><div class="stat"><b id="newCount">0</b><span>今回初めて発見</span></div><div class="stat"><b id="searchCount">0</b><span>検索した組み合わせ</span></div><div class="stat"><b id="clipCount">0</b><span>保存記事</span></div></div>
+<p class="hint" id="fcTips" style="background:#f2faf7;border-radius:8px;padding:9px 11px">買取FC調査では、車買取店を自動判定で除外。公式新店情報は「求人・SNS・FCから深掘り」内にまとめています。</p>
 <div id="searchStatus" class="status">条件を選んで「公開ニュースを自動検索」を押してください。</div><div class="actionrow"><button id="testConnection" class="btn sm">通信診断（1件でテスト）</button><button id="openFallback" class="btn sm alt" style="display:none">深掘り検索で探す →</button></div>
 <div class="searchfilters qualityfilters"><input id="newsFilter" class="input" placeholder="記事タイトルや業種、地域を絞り込み"><select id="qualityFilter" class="input" style="min-width:175px" aria-label="候補の確度"><option value="high">有力候補のみ（おすすめ）</option><option value="review">有力候補＋要確認</option><option value="all">除外候補も表示</option></select><label class="checkbox"><input type="checkbox" id="onlyNew">初めて発見した記事だけ</label></div><p class="hint">「有力」は記事見出しの自動判定で、店舗の開業が確定したことを意味しません。見つからない場合は「要確認」まで広げてください。</p>
 <div class="actionrow"><button id="nextBatch" class="btn sm alt" style="display:none">別の検索条件も続けて調べる</button><button id="clearDiscovered" class="btn ghost sm">発見履歴をリセット</button><button id="clearIgnored" class="btn ghost sm">非表示を解除</button></div>
 <div id="articleList"><div class="empty"><b>まだ検索結果がありません</b>左側で業種・地域・開業月を選ぶと、ここに記事候補が表示されます。</div></div>
 <p class="footnote">※ 記事公開日と店舗開業日は別です。記事に記載された店舗名・開業日・所在地を公式情報で確認してください。Googleニュースに掲載されない店舗は、深掘り検索から探せます。</p></div>
 <div id="deepTab" class="content" hidden><div class="content-head"><div><h2>検索ルートを変えて、見つけ漏れを減らす</h2><p class="subtitle">Google検索をワンクリックで起動。通常検索・FC情報・求人・SNSを使い分けます。</p></div><button class="btn sm" id="copyDeepAll">表示キーワードをコピー</button></div>
+<div id="officialSection" class="card" style="margin:12px 0 18px;padding:15px;border-color:#b9dcd7;background:#f5fbfa" hidden>
+<div class="group-head"><h3>🏬 買取FCの公式新店舗情報</h3><span class="pill high">直接確認</span></div>
+<p class="hint">ニュース検索で漏れやすい店舗は、本部の公式発表から探します。下記は外部サイトを開くリンクで、自動取得ではありません。</p>
+<div class="official-list" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px">
+<a class="btn alt" href="https://www.kaitori-daikichi.jp/open/category/new/" target="_blank" rel="noopener noreferrer">買取大吉｜新店一覧 ↗</a>
+<a class="btn alt" href="https://www.otakaraya.jp/news/" target="_blank" rel="noopener noreferrer">おたからや｜新店舗ニュース ↗</a>
+<a class="btn alt" href="https://wakaba-fc.jp/news_list/" target="_blank" rel="noopener noreferrer">買取わかば｜新店情報 ↗</a>
+<a class="btn alt" href="https://www.kaitori-ikuraya.jp/open/category/new/" target="_blank" rel="noopener noreferrer">いくらや｜新店一覧 ↗</a>
+</div><p class="hint">公式ページで店舗名・開業日・地域を確認後、必要な情報を会社の営業システムへ登録してください。</p></div>
 <div class="chips" id="routeChips"></div><div class="searchfilters" style="grid-template-columns:1fr auto"><input class="input" id="deepFilter" placeholder="キーワードから絞り込む"><span id="deepTotal" class="muted tiny"></span></div>
 <div class="serp-note">「検索する」でGoogleの検索結果を開きます。外部サイトの内容をアプリが自動取得する機能ではありません。</div>
 <div id="deepList"></div><div class="actionrow"><button id="moreDeep" class="btn sm">さらに表示</button></div></div>
@@ -62,7 +72,7 @@ function persist(){state.route=route;put(KEY,state)}
 let toastTimer;function toast(msg){$('toast').textContent=msg;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),2300)}
 function chip(container,values,selected,fn){const root=$(container);root.textContent='';values.forEach(s=>{const el=document.createElement('button');el.className='chip'+(selected.includes(s)?' selected':'');el.textContent=(selected.includes(s)?'✓ ':'')+s;el.setAttribute('aria-pressed',String(selected.includes(s)));el.onclick=()=>fn(s);root.appendChild(el)})}
 function toggle(which,x){const arr=state[which];state[which]=arr.includes(x)?arr.filter(a=>a!==x):[...arr,x];if(state[which].length>12)state[which]=state[which].slice(0,12);persist();renderChips();renderDeep()}
-function renderChips(){chip('industryChips',[...new Set([...INDUSTRIES,...state.industries])],state.industries,x=>toggle('industries',x));chip('regionChips',REGIONS,state.regions,x=>toggle('regions',x));chip('brandChips',[...new Set([...BRANDS,...state.brands])],state.brands,x=>toggle('brands',x));$('fromMonth').value=state.from;$('toMonth').value=state.to;document.querySelector(`input[name="scanMode"][value="${state.mode}"]`)?.click?.();}
+function renderChips(){if($('officialSection'))$('officialSection').hidden=!state.industries.includes('買取専門店');if($('fcTips'))$('fcTips').hidden=!state.industries.includes('買取専門店');chip('industryChips',[...new Set([...INDUSTRIES,...state.industries])],state.industries,x=>toggle('industries',x));chip('regionChips',REGIONS,state.regions,x=>toggle('regions',x));chip('brandChips',[...new Set([...BRANDS,...state.brands])],state.brands,x=>toggle('brands',x));$('fromMonth').value=state.from;$('toMonth').value=state.to;document.querySelector(`input[name="scanMode"][value="${state.mode}"]`)?.click?.();}
 function addCustom(kind,id){const el=$(id),v=el.value.trim();if(!v)return;if(v.length>40)return toast('40文字以内で入力してください');if(!state[kind].includes(v))state[kind].push(v);el.value='';persist();renderChips();renderDeep()}
 $('industryClear').onclick=()=>{state.industries=[];persist();renderChips();renderDeep()};$('regionClear').onclick=()=>{state.regions=[];persist();renderChips();renderDeep()};$('addIndustry').onclick=()=>addCustom('industries','customIndustry');$('addBrand').onclick=()=>addCustom('brands','customBrand');
 for(const e of document.querySelectorAll('[data-region-preset]'))e.onclick=()=>{const preset=e.dataset.regionPreset;state.regions=preset==='tokai'?['愛知','岐阜','三重','静岡']:preset==='hokuriku'?['石川','富山','福井']:['長野','新潟','山梨'];persist();renderChips();renderDeep()};
