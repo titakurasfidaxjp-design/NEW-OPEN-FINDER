@@ -1,12 +1,12 @@
 {
-  "name": "OPEN LEAD FINDER - 新規開業検索ジェネレーター",
-  "short_name": "開業リサーチ",
-  "description": "新規開業店舗の検索キーワードをまとめて生成する営業リサーチツール",
+  "name": "OPEN LEAD FINDER Discovery | 新規開業発掘ツール",
+  "short_name": "開業発掘",
+  "description": "新規開業ニュースと開業予定店舗を発見する検索ツール",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f4f7fa",
-  "theme_color": "#102b44",
+  "background_color": "#f6f8fb",
+  "theme_color": "#142a43",
   "lang": "ja",
   "icons": [
     {"src":"./icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
