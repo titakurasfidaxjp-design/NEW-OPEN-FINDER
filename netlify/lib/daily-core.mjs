@@ -1,6 +1,7 @@
 // OPEN LEAD FINDER v5 — morning RSS scan for 9 prefectures / 40 sectors.
 // IMPORTANT: These are candidate news articles, NOT verified storefronts.
 import { PROFILES, parseRSS, classify, articleId } from '../functions/search-openings.mjs';
+import {refineOpening} from './refine-opening.mjs';
 
 export const TARGET_REGIONS = ['愛知','岐阜','静岡','三重','滋賀','石川','福井','富山','長野'];
 export const INDUSTRIES = Object.keys(PROFILES);
@@ -31,7 +32,7 @@ const order={high:2,review:1,noise:0};
 export function pickArticle(item,industry,region,months,query){
   const candidates=months.map(month=>({month,mode:'general',...item,industry,region,query})).map(a=>({...a,...classify(a)}));
   candidates.sort((a,b)=>(order[b.quality]-order[a.quality])||(b.score-a.score));
-  const best=candidates[0];
+  const best=candidates[0]?refineOpening(candidates[0]):null;
   if(!best||best.quality==='noise')return null;
   return {...best,id:articleId(best.title,best.source)};
 }

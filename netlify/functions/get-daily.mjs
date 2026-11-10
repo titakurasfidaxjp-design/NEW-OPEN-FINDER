@@ -1,6 +1,7 @@
 // Read the shared nightly snapshot; no new RSS fetch occurs when refreshing this endpoint.
 import {getStore} from '@netlify/blobs';
 import {mergeOpenings,outsideTarget} from '../lib/merge-openings.mjs';
+import {refineOpening} from '../lib/refine-opening.mjs';
 import {TARGET_REGIONS,shardKey,STORE_NAME,INDUSTRIES,SHARD_PARTS} from '../lib/daily-core.mjs';
 const hdr={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'};
 export default async function(req){
@@ -13,7 +14,8 @@ export default async function(req){
     if(error){warnings.push(key+': '+error);continue}
     if(!data){warnings.push(key+': 未実行');continue}
     if(data.failed?.length)warnings.push(key+': '+data.failed.length+'業種で取得失敗');
-    for(const a of data.articles||[]){
+    for(const original of data.articles||[]){
+      const a=refineOpening(original);
       if(!['high','review'].includes(a.quality)||!TARGET_REGIONS.includes(a.region)||!INDUSTRIES.includes(a.industry))continue;
       if(outsideTarget(a)){outsideCount++;continue;}
       const id=a.id||a.title;
@@ -24,6 +26,6 @@ export default async function(req){
   const base=[...unique.values()];
   const result=mergeOpenings(base);
   const articles=result.articles.slice(0,1200);
-  return new Response(JSON.stringify({version:'v5.2',regions:TARGET_REGIONS,industries:INDUSTRIES.length,articles,summary:{shardsReady:pieces.filter(x=>x.data).length,totalShards:keys.length,lastUpdatedAt:pieces.reduce((max,x)=>x.data?.updatedAt>max?x.data.updatedAt:max,''),warnings,syndicatedDuplicatesRemoved:result.duplicates,outsideTargetExcluded:outsideCount,rawCandidates:base.length}}),{headers:hdr});
+  return new Response(JSON.stringify({version:'v5.3',regions:TARGET_REGIONS,industries:INDUSTRIES.length,articles,summary:{shardsReady:pieces.filter(x=>x.data).length,totalShards:keys.length,lastUpdatedAt:pieces.reduce((max,x)=>x.data?.updatedAt>max?x.data.updatedAt:max,''),warnings,syndicatedDuplicatesRemoved:result.duplicates,outsideTargetExcluded:outsideCount,rawCandidates:base.length}}),{headers:hdr});
  }catch(e){console.error('[get-daily]',e);return new Response(JSON.stringify({error:'保存された検索結果を読み込めませんでした。',detail:String(e?.message||e).slice(0,160)}),{status:500,headers:hdr});}
 }
