@@ -1,6 +1,7 @@
+import {EXTRA_IDS,scanExtraOfficial} from './official-extras.mjs';
 // v5.4: conservative parsing of publicly published *official* opening lists.
 // A blank result is not silently treated as success if the document structure changes.
-export const SOURCE_IDS=['rintosull','daikichi'];
+export const SOURCE_IDS=['rintosull','daikichi',...EXTRA_IDS];
 export const OFFICIAL_STORE='olf-official-v54';
 export const NINE=['愛知','岐阜','静岡','三重','滋賀','石川','福井','富山','長野'];
 const REGION_NAMES=new Map(NINE.flatMap(x=>[[x,x],[x+'県',x]]));
@@ -31,6 +32,10 @@ export function parseRintosull(html,url='https://rintosull.jp/news/all-topics-20
 }
 export function parseDaikichi(html,url='https://www.kaitori-daikichi.jp/open/category/new/'){
  const lines=textLines(html),found=[],seen=new Set();let pubYear=new Date().getUTCFullYear();
+ // The list items link to official /open/open-* articles. Prefer the individual
+ // announcement to the category listing, even if the store-detail link is absent.
+ const articleLinks=[...String(html||'').matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)]
+  .map(m=>{try{const link=new URL(m[1],url);if(link.hostname!=='www.kaitori-daikichi.jp'||!/^\/open\/open-[\w-]+\/?$/.test(link.pathname))return null;return {href:link.href,label:clean(textLines(m[2]).join(' '))}}catch{return null}}).filter(Boolean);
  for(const s of lines){
   const pub=s.match(/^(20\d{2})\s*[/.-]\s*\d{1,2}\s*[/.-]\s*\d{1,2}$/);if(pub){pubYear=Number(pub[1]);continue;}
   const m=s.match(/[【〖]\s*([^【】〖〗]{2,25})\s*[】〗]\s*(\d{1,2})月(\d{1,2})日\s*[『「]\s*([^『』「」]{3,65})\s*[』」]\s*(?:OPEN|オープン)/i);
@@ -41,7 +46,11 @@ export function parseDaikichi(html,url='https://www.kaitori-daikichi.jp/open/cat
   // A December press release may announce a January opening; do not force same year.
   if(mon===1&&s.includes('来年'))year=pubYear+1;
   let date=iso(year,mon,day);if(!date)continue;
-  const key=region+'|'+name+'|'+date;if(seen.has(key))continue;seen.add(key);found.push(entry('daikichi',name,region,date,url));
+  const key=region+'|'+name+'|'+date;if(seen.has(key))continue;seen.add(key);
+  const direct=articleLinks.find(x=>x.label.includes(name));
+  const a=entry('daikichi',name,region,date,direct?.href||url);
+  if(direct){a.officialListUrl=url;a.auditNotes=['公式の個別発表ページへリンク。店舗詳細ページの有無を追加確認'];}
+  found.push(a);
  }
  return found;
 }
@@ -56,6 +65,7 @@ export function discoverRintosullArticles(html){
  const seen=new Set();return all.sort((a,b)=>b.stamp.localeCompare(a.stamp)).filter(x=>{if(seen.has(x.url))return false;seen.add(x.url);return true}).slice(0,3).map(x=>x.url);
 }
 export async function scanOfficial(source,{getStore,fetcher=fetch,now=new Date()}={}){
+ if(EXTRA_IDS.includes(source))return scanExtraOfficial(source,{getStore,fetcher,now});
  if(!sources[source])throw Error('Unsupported official source');if(typeof getStore!=='function')throw Error('Missing store');
  const store=getStore(OFFICIAL_STORE),before=await store.get(source,{type:'json',consistency:'strong'}).catch(()=>null),prev=new Map((before?.articles||[]).map(x=>[x.id,x]));const found=[],errors=[];
  const urls=[...sources[source].urls];
@@ -69,6 +79,15 @@ export async function scanOfficial(source,{getStore,fetcher=fetch,now=new Date()
   try{const res=await fetcher(url,{signal:ctl.signal,headers:{'Accept':'text/html'}});if(!res.ok)throw Error('HTTP '+res.status);const html=await res.text();if(html.length<800)throw Error('Unexpected short HTML');return {url,articles:sources[source].parse(html,url)}}catch(e){return {url,error:String(e?.message||e).slice(0,90)}}finally{clearTimeout(timer)}
  }));
  for(const v of results){if(v.error)errors.push(`${v.url}: ${v.error}`);else found.push(...v.articles)}
+ // Individual Daikichi articles often link to a direct /store/{branch}/ page.
+ if(source==='daikichi'){
+  const targets=found.filter(a=>/^https:\/\/www\.kaitori-daikichi\.jp\/open\/open-[\w-]+\/?$/.test(a.url)).slice(0,24);
+  await Promise.all(targets.map(async a=>{const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),5500);try{
+   const res=await fetcher(a.url,{signal:ctl.signal,headers:{Accept:'text/html'}});if(!res.ok)return;
+   const page=await res.text();const all=[...page.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
+   for(const m of all){try{const dest=new URL(m[1],a.url);if(dest.hostname==='www.kaitori-daikichi.jp'&&/^\/store\/[^/]+\/?$/.test(dest.pathname)&&/店舗詳細|コチラ|店舗情報/.test(textLines(m[2]).join(' '))){a.officialListUrl=a.url;a.url=dest.href;a.auditNotes=['公式の個別店舗ページへリンク。独自の広告契約可否は未確認'];break}}catch{}}
+  }catch{}finally{clearTimeout(timer)}}));
+ }
  if(!found.length&&results.every(x=>x.error))throw Error(errors.join('; '));
  const nowIso=now.toISOString(),cutoff=now.getTime()-100*86400000,map=new Map();for(const a of prev.values()){const d=Date.parse(a.openingDate+'T00:00:00+09:00');if(Number.isFinite(d)&&d>=cutoff)map.set(a.id,a)}
  for(const a of found){const earlier=map.get(a.id);map.set(a.id,{...a,firstSeenAt:earlier?.firstSeenAt||nowIso,lastSeenAt:nowIso});}

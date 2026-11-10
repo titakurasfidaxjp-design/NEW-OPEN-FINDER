@@ -35,7 +35,7 @@ export default async function(req){
    if(a.region!==b.region||a.industry!==b.industry)return false;
    const name=norm(b.storeName||'');const title=norm(a.title||'');
    if(!name||name.length<7)return false;
-   const brand=b.storeName.startsWith('Rintosull')?'rintosull':b.storeName.startsWith('買取大吉')?'買取大吉':'';
+   const brand=['Rintosull','買取大吉','おたからや','買取わかば','セルフカフェ','ホットヨガLAVA','エニタイムフィットネス','FAST NAIL'].find(x=>b.storeName.startsWith(x))||'';
    return brand&&title.includes(norm(brand))&&title.includes(name.replace(norm(brand),''));
   }
   const combined=[...result.articles];let joinedOfficial=0;
@@ -45,6 +45,7 @@ export default async function(req){
    combined[found]={...a,firstSeenAt:[a.firstSeenAt,old.firstSeenAt].filter(Boolean).sort()[0],sources,matchedRecords:(old.matchedRecords||1)+1};joinedOfficial++;
   }
   const articles=combined.slice(0,1200);
-  return new Response(JSON.stringify({version:'v5.4',regions:TARGET_REGIONS,industries:INDUSTRIES.length,articles,summary:{shardsReady:pieces.filter(x=>x.data).length,totalShards:keys.length,lastUpdatedAt:[...pieces.map(x=>x.data?.updatedAt),...officialSnaps.map(x=>x.data?.updatedAt)].filter(Boolean).sort().at(-1)||'',warnings,syndicatedDuplicatesRemoved:result.duplicates,outsideTargetExcluded:outsideCount,rawCandidates:base.length,officialSourcesReady:officialSnaps.filter(x=>x.data).length,officialSourcesTotal:SOURCE_IDS.length,officialStores:official.length,officialMatchedNews:joinedOfficial}}),{headers:hdr});
+  const officialSourceDetails=officialSnaps.map(({source,data,error})=>({id:source,ready:!!data,count:data?.articles?.length||0,fetched:data?.fetched??null,updatedAt:data?.updatedAt||null,warning:!!error||!!data?.errors?.length}));
+  return new Response(JSON.stringify({version:'v5.5',regions:TARGET_REGIONS,industries:INDUSTRIES.length,articles,summary:{shardsReady:pieces.filter(x=>x.data).length,totalShards:keys.length,lastUpdatedAt:[...pieces.map(x=>x.data?.updatedAt),...officialSnaps.map(x=>x.data?.updatedAt)].filter(Boolean).sort().at(-1)||'',warnings,syndicatedDuplicatesRemoved:result.duplicates,outsideTargetExcluded:outsideCount,rawCandidates:base.length,officialSourcesReady:officialSnaps.filter(x=>x.data).length,officialSourcesTotal:SOURCE_IDS.length,officialStores:official.length,officialMatchedNews:joinedOfficial,officialSourceDetails}}),{headers:hdr});
  }catch(e){console.error('[get-daily]',e);return new Response(JSON.stringify({error:'保存された検索結果を読み込めませんでした。',detail:String(e?.message||e).slice(0,160)}),{status:500,headers:hdr});}
 }
