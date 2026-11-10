@@ -1,11 +1,11 @@
 // Read the shared nightly snapshot; no new RSS fetch occurs when refreshing this endpoint.
 import {getStore} from '@netlify/blobs';
-import {TARGET_REGIONS,shardKey,STORE_NAME,INDUSTRIES} from '../lib/daily-core.mjs';
+import {TARGET_REGIONS,shardKey,STORE_NAME,INDUSTRIES,SHARD_PARTS} from '../lib/daily-core.mjs';
 const hdr={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'};
 export default async function(req){
  if(req.method!=='GET')return new Response(JSON.stringify({error:'GETのみ対応'}),{status:405,headers:hdr});
  try{
-  const store=getStore(STORE_NAME),keys=TARGET_REGIONS.flatMap(r=>[shardKey(r,0),shardKey(r,1)]);
+  const store=getStore(STORE_NAME),keys=TARGET_REGIONS.flatMap(r=>Array.from({length:SHARD_PARTS},(_,part)=>shardKey(r,part)));
   const pieces=await Promise.all(keys.map(async key=>{try{return {key,data:await store.get(key,{type:'json',consistency:'strong'})};}catch(e){return {key,error:String(e?.message||e).slice(0,140)}}}));
   const unique=new Map(),warnings=[],order={high:2,review:1,noise:0};
   for(const {key,data,error} of pieces){
@@ -20,6 +20,6 @@ export default async function(req){
     }
   }
   const articles=[...unique.values()].sort((a,b)=>Date.parse(b.firstSeenAt||0)-Date.parse(a.firstSeenAt||0)||b.score-a.score).slice(0,1200);
-  return new Response(JSON.stringify({version:'v5.0',regions:TARGET_REGIONS,industries:INDUSTRIES.length,articles,summary:{shardsReady:pieces.filter(x=>x.data).length,totalShards:keys.length,lastUpdatedAt:pieces.reduce((max,x)=>x.data?.updatedAt>max?x.data.updatedAt:max,''),warnings}}),{headers:hdr});
+  return new Response(JSON.stringify({version:'v5.1',regions:TARGET_REGIONS,industries:INDUSTRIES.length,articles,summary:{shardsReady:pieces.filter(x=>x.data).length,totalShards:keys.length,lastUpdatedAt:pieces.reduce((max,x)=>x.data?.updatedAt>max?x.data.updatedAt:max,''),warnings}}),{headers:hdr});
  }catch(e){console.error('[get-daily]',e);return new Response(JSON.stringify({error:'保存された検索結果を読み込めませんでした。',detail:String(e?.message||e).slice(0,160)}),{status:500,headers:hdr});}
 }

@@ -1,9 +1,11 @@
-// OPEN LEAD FINDER v5 — morning RSS scan for 9 prefectures / 22 sectors.
+// OPEN LEAD FINDER v5 — morning RSS scan for 9 prefectures / 40 sectors.
 // IMPORTANT: These are candidate news articles, NOT verified storefronts.
 import { PROFILES, parseRSS, classify, articleId } from '../functions/search-openings.mjs';
 
 export const TARGET_REGIONS = ['愛知','岐阜','静岡','三重','滋賀','石川','福井','富山','長野'];
 export const INDUSTRIES = Object.keys(PROFILES);
+export const SHARD_SIZE = 11;
+export const SHARD_PARTS = Math.ceil(INDUSTRIES.length / SHARD_SIZE);
 export const STORE_NAME = 'olf-daily-9pref-v5';
 export const REGION_CITIES = {
   '愛知':['名古屋','豊橋','一宮','岡崎'], '岐阜':['岐阜市','大垣','高山','多治見'],
@@ -23,7 +25,7 @@ export function buildQuery(industry,region,now=new Date()) {
   const choices = PROFILES[industry].search.slice(0,3).map(x=>`"${x}"`).join(' OR ');
   const places = [region,...REGION_CITIES[region]].map(x=>`"${x}"`).join(' OR ');
   const after = new Date(now.getTime()-75*86400000).toISOString().slice(0,10);
-  return `(${choices}) (${places}) ("新規オープン" OR "新店舗" OR "開業" OR "開院" OR "開校" OR "出店") after:${after} -加盟者募集 -開業セミナー`;
+  return `(${choices}) (${places}) ("新規オープン" OR "新店舗" OR "開業" OR "開院" OR "開校" OR "開所" OR "開設" OR "出店") after:${after} -加盟者募集 -開業セミナー`;
 }
 const order={high:2,review:1,noise:0};
 export function pickArticle(item,industry,region,months,query){
@@ -46,9 +48,9 @@ export async function fetchIndustry(industry,region,months,fetcher=fetch,now=new
   }finally{clearTimeout(timer)}
 }
 export async function scanShard(region,part,{getStore,fetcher=fetch,now=new Date()}={}){
-  if(!TARGET_REGIONS.includes(region)||![0,1].includes(part))throw Error('Invalid shard');
+  if(!TARGET_REGIONS.includes(region)||(!Number.isInteger(part)||part<0||part>=SHARD_PARTS))throw Error('Invalid shard');
   if(typeof getStore!=='function')throw Error('Storage connector missing');
-  const target=INDUSTRIES.slice(part*11,(part+1)*11),months=monthWindow(now),store=getStore(STORE_NAME),key=shardKey(region,part);
+  const target=INDUSTRIES.slice(part*SHARD_SIZE,(part+1)*SHARD_SIZE),months=monthWindow(now),store=getStore(STORE_NAME),key=shardKey(region,part);
   const previous=await store.get(key,{type:'json',consistency:'strong'}).catch(()=>null);
   const previousMap=new Map((previous?.articles||[]).map(a=>[a.id,a]));
   let ptr=0,completed=0;const failed=[],records=[];
