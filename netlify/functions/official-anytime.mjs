@@ -1,4 +1,3 @@
-// OPEN LEAD FINDER v5.5: anytime official site, Japan time 06:48.
-import {scanOfficial} from '../lib/official-core.mjs';
-export default async function(){const {getStore}=await import('@netlify/blobs');console.log('[official-scan]',JSON.stringify(await scanOfficial('anytime',{getStore})));}
-export const config={schedule:'48 21 * * *'};
+// v5.6: Retired. The Anytime source was removed at user request.
+// Keep a harmless unscheduled stub so copying this update over v5.5 removes its old cron schedule.
+export default async function(){return new Response(JSON.stringify({retired:true,message:'v5.6: 営業対象から除外済み'}),{headers:{'Content-Type':'application/json'}});}

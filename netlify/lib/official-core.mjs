@@ -1,7 +1,8 @@
 import {EXTRA_IDS,scanExtraOfficial} from './official-extras.mjs';
+import {scanSalesOfficial} from './official-sales.mjs';
 // v5.4: conservative parsing of publicly published *official* opening lists.
 // A blank result is not silently treated as success if the document structure changes.
-export const SOURCE_IDS=['rintosull','daikichi',...EXTRA_IDS];
+export const SOURCE_IDS=['rintosull','daikichi',...EXTRA_IDS.filter(s=>s!=='anytime'),'ikuraya','repilates'];
 export const OFFICIAL_STORE='olf-official-v54';
 export const NINE=['愛知','岐阜','静岡','三重','滋賀','石川','福井','富山','長野'];
 const REGION_NAMES=new Map(NINE.flatMap(x=>[[x,x],[x+'県',x]]));
@@ -65,6 +66,8 @@ export function discoverRintosullArticles(html){
  const seen=new Set();return all.sort((a,b)=>b.stamp.localeCompare(a.stamp)).filter(x=>{if(seen.has(x.url))return false;seen.add(x.url);return true}).slice(0,3).map(x=>x.url);
 }
 export async function scanOfficial(source,{getStore,fetcher=fetch,now=new Date()}={}){
+ if(['ikuraya','repilates'].includes(source))return scanSalesOfficial(source,{getStore,fetcher,now});
+ if(source==='anytime')throw Error('Anytimeはv5.6で対象外です');
  if(EXTRA_IDS.includes(source))return scanExtraOfficial(source,{getStore,fetcher,now});
  if(!sources[source])throw Error('Unsupported official source');if(typeof getStore!=='function')throw Error('Missing store');
  const store=getStore(OFFICIAL_STORE),before=await store.get(source,{type:'json',consistency:'strong'}).catch(()=>null),prev=new Map((before?.articles||[]).map(x=>[x.id,x]));const found=[],errors=[];
