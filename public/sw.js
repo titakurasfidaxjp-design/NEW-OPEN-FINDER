@@ -1,5 +1,5 @@
-const CACHE='olf-discovery-v56-20261110';
-const ASSETS=['./index.html','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
+const CACHE='olf-discovery-v58-20261112';
+const ASSETS=['./index.html','./sales-fit.js','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));self.skipWaiting()});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim()});
 self.addEventListener('fetch',e=>{const u=new URL(e.request.url);if(e.request.method!=='GET'||u.origin!==self.location.origin||u.pathname.includes('/.netlify/functions/'))return;e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)))});
