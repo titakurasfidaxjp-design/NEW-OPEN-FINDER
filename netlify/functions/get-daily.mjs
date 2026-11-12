@@ -10,11 +10,13 @@ export default async function(req){
  try{
   const store=getStore(STORE_NAME),keys=TARGET_REGIONS.flatMap(r=>Array.from({length:SHARD_PARTS},(_,part)=>shardKey(r,part)));
   const pieces=await Promise.all(keys.map(async key=>{try{return {key,data:await store.get(key,{type:'json',consistency:'strong'})};}catch(e){return {key,error:String(e?.message||e).slice(0,140)}}}));
-  const unique=new Map(),warnings=[],order={high:2,review:1,noise:0};let outsideCount=0;
+  const unique=new Map(),warnings=[],order={high:2,review:1,noise:0};let outsideCount=0,extraReady=0,extraExpected=0,extraFailures=0;
   for(const {key,data,error} of pieces){
     if(error){warnings.push(key+': '+error);continue}
     if(!data){warnings.push(key+': 未実行');continue}
     if(data.failed?.length)warnings.push(key+': '+data.failed.length+'業種で取得失敗');
+    extraReady+=data.extraCompleted||0;extraExpected+=data.extraExpected||0;extraFailures+=data.extraFailed?.length||0;
+    if(data.extraFailed?.length)warnings.push(key+': 追加検索'+data.extraFailed.length+'業種で失敗');
     for(const original of data.articles||[]){
       const a=refineOpening(original);
       if(!['high','review'].includes(a.quality)||!TARGET_REGIONS.includes(a.region)||!INDUSTRIES.includes(a.industry))continue;
@@ -23,7 +25,9 @@ export default async function(req){
       if(outsideTarget(a)){outsideCount++;continue;}
       const id=a.id||a.title;
       const old=unique.get(id);
-      if(!old||order[a.quality]>order[old.quality]||(order[a.quality]===order[old.quality]&&a.score>old.score))unique.set(id,a);
+      const routes=[...new Set([...(old?.discoveryRoutes||[]),...(a.discoveryRoutes||[])])];
+      if(!old||order[a.quality]>order[old.quality]||(order[a.quality]===order[old.quality]&&a.score>old.score))unique.set(id,{...a,discoveryRoutes:routes});
+      else unique.set(id,{...old,discoveryRoutes:routes});
     }
   }
   const base=[...unique.values()];
@@ -54,7 +58,9 @@ export default async function(req){
    combined[found]={...a,...enriched,firstSeenAt:[a.firstSeenAt,old.firstSeenAt].filter(Boolean).sort()[0],sources,matchedRecords:(old.matchedRecords||1)+1};joinedOfficial++;
   }
   const articles=combined.slice(0,1200);
+  const extraFound=articles.filter(a=>Array.isArray(a.discoveryRoutes)&&a.discoveryRoutes.some(r=>r!=='standard')).length;
+  const extraOnly=articles.filter(a=>Array.isArray(a.discoveryRoutes)&&a.discoveryRoutes.length&&!a.discoveryRoutes.includes('standard')).length;
   const officialSourceDetails=officialSnaps.map(({source,data,error})=>({id:source,ready:!!data,count:data?.articles?.length||0,fetched:data?.fetched??null,updatedAt:data?.updatedAt||null,warning:!!error||!!data?.errors?.length}));
-  return new Response(JSON.stringify({version:'v5.6',regions:TARGET_REGIONS,industries:INDUSTRIES.length,articles,summary:{shardsReady:pieces.filter(x=>x.data).length,totalShards:keys.length,lastUpdatedAt:[...pieces.map(x=>x.data?.updatedAt),...officialSnaps.map(x=>x.data?.updatedAt)].filter(Boolean).sort().at(-1)||'',warnings,syndicatedDuplicatesRemoved:result.duplicates,outsideTargetExcluded:outsideCount,rawCandidates:base.length,officialSourcesReady:officialSnaps.filter(x=>x.data).length,officialSourcesTotal:SOURCE_IDS.length,officialStores:official.length,officialMatchedNews:joinedOfficial,officialSourceDetails}}),{headers:hdr});
+  return new Response(JSON.stringify({version:'v5.9',regions:TARGET_REGIONS,industries:INDUSTRIES.length,articles,summary:{shardsReady:pieces.filter(x=>x.data).length,totalShards:keys.length,lastUpdatedAt:[...pieces.map(x=>x.data?.updatedAt),...officialSnaps.map(x=>x.data?.updatedAt)].filter(Boolean).sort().at(-1)||'',warnings,syndicatedDuplicatesRemoved:result.duplicates,outsideTargetExcluded:outsideCount,rawCandidates:base.length,officialSourcesReady:officialSnaps.filter(x=>x.data).length,officialSourcesTotal:SOURCE_IDS.length,officialStores:official.length,officialMatchedNews:joinedOfficial,extraReady,extraExpected,extraFailures,extraFound,extraOnly,officialSourceDetails}}),{headers:hdr});
  }catch(e){console.error('[get-daily]',e);return new Response(JSON.stringify({error:'保存された検索結果を読み込めませんでした。',detail:String(e?.message||e).slice(0,160)}),{status:500,headers:hdr});}
 }

@@ -100,9 +100,10 @@ export function mergeOpenings(input){
    const sources=[];const seen=new Set();
    for(const a of items){if(!a.url||seen.has(a.url))continue;seen.add(a.url);sources.push({source:a.source||'掲載元不明',url:a.url,title:a.title})}
    const firstSeenAt=items.map(a=>a.firstSeenAt).filter(Boolean).sort()[0]||primary.firstSeenAt;
+   const discoveryRoutes=[...new Set(items.flatMap(a=>a.discoveryRoutes||[]))];
    return {...primary,quality:strongest.quality,score:strongest.score,industry:strongest.industry,
       reasons:strongest.reasons,warnings:strongest.warnings,firstSeenAt,
-      sources,duplicateCount:Math.max(0,sources.length-1),matchedRecords:items.length};
+      sources,discoveryRoutes,duplicateCount:Math.max(0,sources.length-1),matchedRecords:items.length};
  });
  return {articles:merged.sort((a,b)=>Date.parse(b.firstSeenAt||0)-Date.parse(a.firstSeenAt||0)||(b.score||0)-(a.score||0)),duplicates};
 }
