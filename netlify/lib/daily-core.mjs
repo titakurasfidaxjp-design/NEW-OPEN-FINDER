@@ -2,7 +2,7 @@
 // IMPORTANT: These are candidate news articles, NOT verified storefronts.
 import { PROFILES, parseRSS, classify, articleId } from '../functions/search-openings.mjs';
 import {refineOpening} from './refine-opening.mjs';
-import {discoveryPlan,EXTRA_INDUSTRIES,TARGET_REGIONS,REGION_CITIES} from './discovery-queries.mjs';
+import {discoveryPlan,localDiscoveryPlan,LOCAL_INDUSTRIES,EXTRA_INDUSTRIES,TARGET_REGIONS,REGION_CITIES} from './discovery-queries.mjs';
 export {TARGET_REGIONS,REGION_CITIES};
 export const INDUSTRIES=Object.keys(PROFILES);
 export const SHARD_SIZE=11;
@@ -58,23 +58,42 @@ export async function fetchDiscoveryIndustry(industry,region,months,fetcher=fetc
       .filter(Boolean).map(a=>({...a,discoveryRoutes:[plan.route]}));
   }finally{clearTimeout(timer)}
 }
+// Additional municipality lane; contained failure and route tracking.
+export async function fetchLocalIndustry(industry,region,months,fetcher=fetch,now=new Date()){
+ const plan=localDiscoveryPlan(industry,region,now);
+ if(!plan)return [];
+ const url='https://news.google.com/rss/search?'+new URLSearchParams({q:plan.query,hl:'ja',gl:'JP',ceid:'JP:ja'});
+ const c=new AbortController(),timer=setTimeout(()=>c.abort(),5500);
+ try{
+  const response=await fetcher(url,{signal:c.signal,headers:{Accept:'application/rss+xml, application/xml;q=0.9'}});
+  if(!response.ok)throw Error('RSS HTTP '+response.status);
+  const xml=await response.text();
+  if(!/<rss[\s>]|<item[\s>]/i.test(xml))throw Error('RSSが取得できませんでした');
+  return parseRSS(xml).map(x=>pickArticle(x,industry,region,months,plan.query))
+   .filter(Boolean).map(a=>({...a,discoveryRoutes:[plan.route]}));
+ }finally{clearTimeout(timer)}
+}
 export async function scanShard(region,part,{getStore,fetcher=fetch,now=new Date()}={}){
   if(!TARGET_REGIONS.includes(region)||(!Number.isInteger(part)||part<0||part>=SHARD_PARTS))throw Error('Invalid shard');
   if(typeof getStore!=='function')throw Error('Storage connector missing');
   const target=INDUSTRIES.slice(part*SHARD_SIZE,(part+1)*SHARD_SIZE),months=monthWindow(now),store=getStore(STORE_NAME),key=shardKey(region,part);
   const previous=await store.get(key,{type:'json',consistency:'strong'}).catch(()=>null);
   const previousMap=new Map((previous?.articles||[]).map(a=>[a.id,a]));
-  let ptr=0,completed=0,extraCompleted=0;const failed=[],extraFailed=[],records=[];
+  let ptr=0,completed=0,extraCompleted=0,localCompleted=0;const failed=[],extraFailed=[],localFailed=[],records=[];
   async function worker(){while(ptr<target.length){
     const industry=target[ptr++];
     const planned=!!discoveryPlan(industry,region,now);
+    const plannedLocal=!!localDiscoveryPlan(industry,region,now);
     const tasks=[fetchIndustry(industry,region,months,fetcher,now)];
-    if(planned)tasks.push(fetchDiscoveryIndustry(industry,region,months,fetcher,now));
+    const extraIndex=planned?tasks.push(fetchDiscoveryIndustry(industry,region,months,fetcher,now))-1:-1;
+    const localIndex=plannedLocal?tasks.push(fetchLocalIndustry(industry,region,months,fetcher,now))-1:-1;
     const outcomes=await Promise.allSettled(tasks);
     if(outcomes[0].status==='fulfilled'){records.push(...outcomes[0].value);completed++;}
     else failed.push({industry,message:String(outcomes[0].reason?.message||outcomes[0].reason).slice(0,110)});
-    if(planned){if(outcomes[1].status==='fulfilled'){records.push(...outcomes[1].value);extraCompleted++;}
-      else extraFailed.push({industry,message:String(outcomes[1].reason?.message||outcomes[1].reason).slice(0,110)});}
+    if(planned){if(outcomes[extraIndex].status==='fulfilled'){records.push(...outcomes[extraIndex].value);extraCompleted++;}
+      else extraFailed.push({industry,message:String(outcomes[extraIndex].reason?.message||outcomes[extraIndex].reason).slice(0,110)});}
+    if(plannedLocal){if(outcomes[localIndex].status==='fulfilled'){records.push(...outcomes[localIndex].value);localCompleted++;}
+      else localFailed.push({industry,message:String(outcomes[localIndex].reason?.message||outcomes[localIndex].reason).slice(0,110)});}
   }}
   await Promise.all(Array.from({length:4},()=>worker()));
   const nowIso=now.toISOString(),cutoff=now.getTime()-40*86400000;
@@ -92,7 +111,7 @@ export async function scanShard(region,part,{getStore,fetcher=fetch,now=new Date
   const articles=[...map.values()].sort((a,b)=>Date.parse(b.firstSeenAt)-Date.parse(a.firstSeenAt)).slice(0,240);
   // On total failure, retain last successful snapshot and explicitly report errors.
   const newCount=records.filter(a=>!previousMap.has(a.id)).length;
-  const output={region,part,updatedAt:nowIso,completed,expected:target.length,failed,months,articles:completed===0&&extraCompleted===0&&previous?.articles?.length?previous.articles:articles,newCount,extraCompleted,extraExpected:target.filter(i=>EXTRA_INDUSTRIES.includes(i)).length,extraFailed};
+  const output={region,part,updatedAt:nowIso,completed,expected:target.length,failed,months,articles:completed===0&&extraCompleted===0&&localCompleted===0&&previous?.articles?.length?previous.articles:articles,newCount,extraCompleted,extraExpected:target.filter(i=>EXTRA_INDUSTRIES.includes(i)).length,extraFailed,localCompleted,localExpected:target.filter(i=>!!localDiscoveryPlan(i,region,now)).length,localFailed};
   await store.setJSON(key,output);
-  return {key,region,part,completed,failures:failed.length,extraCompleted,extraFailures:extraFailed.length,count:output.articles.length,newCount};
+  return {key,region,part,completed,failures:failed.length,extraCompleted,extraFailures:extraFailed.length,localCompleted,localFailures:localFailed.length,count:output.articles.length,newCount};
 }

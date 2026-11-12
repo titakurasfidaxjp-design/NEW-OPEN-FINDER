@@ -10,13 +10,15 @@ export default async function(req){
  try{
   const store=getStore(STORE_NAME),keys=TARGET_REGIONS.flatMap(r=>Array.from({length:SHARD_PARTS},(_,part)=>shardKey(r,part)));
   const pieces=await Promise.all(keys.map(async key=>{try{return {key,data:await store.get(key,{type:'json',consistency:'strong'})};}catch(e){return {key,error:String(e?.message||e).slice(0,140)}}}));
-  const unique=new Map(),warnings=[],order={high:2,review:1,noise:0};let outsideCount=0,geoUnknown=0,geoConflict=0,extraReady=0,extraExpected=0,extraFailures=0;
+  const unique=new Map(),warnings=[],order={high:2,review:1,noise:0};let outsideCount=0,geoUnknown=0,geoConflict=0,extraReady=0,extraExpected=0,extraFailures=0,localReady=0,localExpected=0,localFailures=0;
   for(const {key,data,error} of pieces){
     if(error){warnings.push(key+': '+error);continue}
     if(!data){warnings.push(key+': 未実行');continue}
     if(data.failed?.length)warnings.push(key+': '+data.failed.length+'業種で取得失敗');
     extraReady+=data.extraCompleted||0;extraExpected+=data.extraExpected||0;extraFailures+=data.extraFailed?.length||0;
     if(data.extraFailed?.length)warnings.push(key+': 追加検索'+data.extraFailed.length+'業種で失敗');
+    localReady+=data.localCompleted||0;localExpected+=data.localExpected||0;localFailures+=data.localFailed?.length||0;
+    if(data.localFailed?.length)warnings.push(key+': 地域密着検索'+data.localFailed.length+'業種で失敗');
     for(const original of data.articles||[]){
       const a=refineOpening(original);
       if(a.geoStatus==='outside'){outsideCount++;continue;}
@@ -45,7 +47,7 @@ export default async function(req){
   function sameStore(a,b){
    if(a.region!==b.region||a.industry!==b.industry)return false;
    const names=[['Rintosull',['rintosull']],['Repilates',['repilates','リピラティス']],['買取大吉',['買取大吉']],['おたからや',['おたからや']],['買取わかば',['買取わかば','買取店わかば']],['いくらや',['いくらや','買取専門いくらや']],['セルフカフェ',['セルフカフェ']],['ホットヨガLAVA',['lava','ホットヨガスタジオlava']],['FAST NAIL',['fastnail','ファストネイル']]];
-   const brand=names.find(([b])=>norm(b.storeName||'').startsWith(norm(b)));
+   const brand=names.find(([brandName])=>norm(b.storeName||'').startsWith(norm(brandName)));
    if(!brand)return false;
    const branch=norm(b.storeName||'').slice(norm(brand[0]).length);
    const title=norm(a.title||a.storeName||'');
@@ -58,12 +60,14 @@ export default async function(req){
    // Prefer a specific day in a matching news headline over a month-only official notice.
    const newsDay=/^20\d{2}-\d{2}-\d{2}$/.test(old.openingDate||'')&&old.openingDate.slice(0,7)===a.month?old.openingDate:null;
    const enriched=(!a.openingDate&&newsDay)?{openingDate:newsDay,datePrecision:'day',openingDateText:`${+newsDay.slice(0,4)}年${+newsDay.slice(5,7)}月${+newsDay.slice(8)}日`,auditNotes:[...(a.auditNotes||[]),'ニュース記事の日付で補完（公式サイトでは月のみ確認）']}:{};
-   combined[found]={...a,...enriched,firstSeenAt:[a.firstSeenAt,old.firstSeenAt].filter(Boolean).sort()[0],sources,matchedRecords:(old.matchedRecords||1)+1};joinedOfficial++;
+   combined[found]={...a,...enriched,discoveryRoutes:old.discoveryRoutes||[],firstSeenAt:[a.firstSeenAt,old.firstSeenAt].filter(Boolean).sort()[0],sources,matchedRecords:(old.matchedRecords||1)+1};joinedOfficial++;
   }
   const articles=combined.slice(0,1200);
+  const localFound=articles.filter(a=>(a.discoveryRoutes||[]).includes('local-additional')).length;
+  const localOnly=articles.filter(a=>!a.official&&(a.discoveryRoutes||[]).includes('local-additional')&&!(a.discoveryRoutes||[]).includes('standard')&&!(a.discoveryRoutes||[]).includes('indie-additional')&&!(a.discoveryRoutes||[]).includes('fc-additional')).length;
   const extraFound=articles.filter(a=>Array.isArray(a.discoveryRoutes)&&a.discoveryRoutes.some(r=>r!=='standard')).length;
   const extraOnly=articles.filter(a=>Array.isArray(a.discoveryRoutes)&&a.discoveryRoutes.length&&!a.discoveryRoutes.includes('standard')).length;
   const officialSourceDetails=officialSnaps.map(({source,data,error})=>({id:source,ready:!!data,count:data?.articles?.length||0,fetched:data?.fetched??null,updatedAt:data?.updatedAt||null,warning:!!error||!!data?.errors?.length}));
-  return new Response(JSON.stringify({version:'v6.0',regions:TARGET_REGIONS,industries:INDUSTRIES.length,articles,summary:{shardsReady:pieces.filter(x=>x.data).length,totalShards:keys.length,lastUpdatedAt:[...pieces.map(x=>x.data?.updatedAt),...officialSnaps.map(x=>x.data?.updatedAt)].filter(Boolean).sort().at(-1)||'',warnings,syndicatedDuplicatesRemoved:result.duplicates,outsideTargetExcluded:outsideCount,geoUnknownInSnapshots:geoUnknown,geoConflictInSnapshots:geoConflict,geoMatchedInResults:articles.filter(a=>a.official||a.geoStatus==='matched').length,geoUnknownInResults:articles.filter(a=>!a.official&&(a.geoStatus==='unknown'||a.geoStatus==='conflict')).length,rawCandidates:base.length,officialSourcesReady:officialSnaps.filter(x=>x.data).length,officialSourcesTotal:SOURCE_IDS.length,officialStores:official.length,officialMatchedNews:joinedOfficial,extraReady,extraExpected,extraFailures,extraFound,extraOnly,officialSourceDetails}}),{headers:hdr});
+  return new Response(JSON.stringify({version:'v6.1',regions:TARGET_REGIONS,industries:INDUSTRIES.length,articles,summary:{shardsReady:pieces.filter(x=>x.data).length,totalShards:keys.length,lastUpdatedAt:[...pieces.map(x=>x.data?.updatedAt),...officialSnaps.map(x=>x.data?.updatedAt)].filter(Boolean).sort().at(-1)||'',warnings,syndicatedDuplicatesRemoved:result.duplicates,outsideTargetExcluded:outsideCount,geoUnknownInSnapshots:geoUnknown,geoConflictInSnapshots:geoConflict,geoMatchedInResults:articles.filter(a=>a.official||a.geoStatus==='matched').length,geoUnknownInResults:articles.filter(a=>!a.official&&(a.geoStatus==='unknown'||a.geoStatus==='conflict')).length,rawCandidates:base.length,officialSourcesReady:officialSnaps.filter(x=>x.data).length,officialSourcesTotal:SOURCE_IDS.length,officialStores:official.length,officialMatchedNews:joinedOfficial,extraReady,extraExpected,extraFailures,extraFound,extraOnly,localReady,localExpected,localFailures,localFound,localOnly,officialSourceDetails}}),{headers:hdr});
  }catch(e){console.error('[get-daily]',e);return new Response(JSON.stringify({error:'保存された検索結果を読み込めませんでした。',detail:String(e?.message||e).slice(0,160)}),{status:500,headers:hdr});}
 }
