@@ -84,7 +84,7 @@ export async function scanShard(region,part,{getStore,fetcher=fetch,now=new Date
   }
   for(const a of records){
     const before=map.get(a.id),firstSeenAt=before?.firstSeenAt||nowIso;
-    const merged={id:a.id,title:a.title,url:a.url,source:a.source,publishedAt:a.publishedAt,industry:a.industry,region:a.region,month:a.month,quality:a.quality,score:a.score,reasons:a.reasons,warnings:a.warnings,openingDateText:a.openingDateText,firstSeenAt,lastSeenAt:nowIso,discoveryRoutes:a.discoveryRoutes||['standard']};
+    const merged={id:a.id,title:a.title,url:a.url,source:a.source,publishedAt:a.publishedAt,industry:a.industry,region:a.region,month:a.month,quality:a.quality,score:a.score,reasons:a.reasons,warnings:a.warnings,openingDateText:a.openingDateText,geoStatus:a.geoStatus,geoRegion:a.geoRegion,geoEvidence:a.geoEvidence,firstSeenAt,lastSeenAt:nowIso,discoveryRoutes:a.discoveryRoutes||['standard']};
     const routes=[...new Set([...(before?.discoveryRoutes||[]),...merged.discoveryRoutes])];
     if(!before||order[merged.quality]>order[before.quality]||(order[merged.quality]===order[before.quality]&&merged.score>=before.score))map.set(a.id,{...merged,discoveryRoutes:routes});
     else map.set(a.id,{...before,lastSeenAt:nowIso,discoveryRoutes:routes});

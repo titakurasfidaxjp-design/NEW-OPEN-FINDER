@@ -1,4 +1,5 @@
-// OPEN LEAD FINDER v5.3: conservative second-pass corrections on stored headlines.
+import {assessOpeningGeo} from './geo-verify.mjs';
+// OPEN LEAD FINDER v6.0: conservative second-pass corrections on stored headlines.
 // No remote content, no claims of verified opening. Preserve id/firstSeenAt for history.
 const TARGET=['愛知','岐阜','静岡','三重','滋賀','石川','福井','富山','長野'];
 const PREFECTURES=['北海道','青森','岩手','宮城','秋田','山形','福島','茨城','栃木','群馬','埼玉','千葉','東京','神奈川','新潟','富山','石川','福井','山梨','長野','岐阜','静岡','愛知','三重','滋賀','京都','大阪','兵庫','奈良','和歌山','鳥取','島根','岡山','広島','山口','徳島','香川','愛媛','高知','福岡','佐賀','長崎','熊本','大分','宮崎','鹿児島','沖縄'];
@@ -72,20 +73,18 @@ export function refineOpening(item){
  const notes=[],warnings=[...new Set(Array.isArray(a.warnings)?a.warnings:[])];
  let quality=['high','review','noise'].includes(a.quality)?a.quality:'review';
  const downgrade=()=>{if(quality==='high')quality='review'};
- const explicit=explicitRegions(t),foundCities=strongCityRegion(t);
- const regionConflict=explicit.length===1&&foundCities.length===1&&explicit[0]!==foundCities[0];
- const regions=regionConflict?[]:(explicit.length?explicit:foundCities);
- if(regionConflict){downgrade();notes.push('県名と市名の対応が不一致：本社所在地と出店先の混在の可能性');}
- // Geographic evidence gets priority over the prefecture used in a Google News query.
- if(regions.length===1){
-  const actual=regions[0];
-  if(!TARGET.includes(actual)){quality='noise';notes.push('指定9県以外');}
-  else if(a.region!==actual){a.region=actual;notes.push(`記事中の所在地に合わせて${actual}県へ補正`);}
- }else if(regions.length>1){
-  downgrade();notes.push('複数県の店舗情報を含む可能性：店舗単位の確認が必要');
+ // Re-evaluate even historical snapshots; search-region tags are never location evidence.
+ const geo=assessOpeningGeo(a);
+ a.geoStatus=geo.status;
+ a.geoRegion=geo.region;
+ a.geoEvidence=geo.evidence;
+ if(geo.status==='outside'){
+  quality='noise';notes.push(`指定9県の対象外：${geo.region}（${geo.evidence}）`);
+ }else if(geo.status==='matched'){
+  if(a.region!==geo.region){a.region=geo.region;notes.push(`見出しに基づき所在地を${geo.region}へ修正`)}
+ }else{
+  downgrade();notes.push(`所在地${geo.status==='conflict'?'の地域が競合':'未確認'}：${geo.evidence}（検索時の県名は証拠として扱いません）`);
  }
- // Strong out-of-area cities without explicit suffix (e.g. 藤沢市石川).
- if(/神奈川県|藤沢市|千葉県|東京都(?!外)|大阪府/.test(t)&&!explicit.some(x=>TARGET.includes(x))&&!foundCities.length){quality='noise';notes.push('対象県外の所在地');}
  // Business classification: don't label tyre/car buying as luxury-goods pawn/buying stores.
  if(a.industry==='買取専門店'&&/(?:タイヤ|ホイール|中古車|自動車|車両|トラック|バイク|廃車).{0,10}(?:買取|買い取り)|(?:買取|買い取り).{0,10}(?:タイヤ|ホイール|中古車|自動車|車両|トラック|バイク)/.test(t)){
   quality='noise';notes.push('自動車・タイヤ等の専門買取（ブランド品買取店ではない）');
